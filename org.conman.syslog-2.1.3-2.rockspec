@@ -1,11 +1,11 @@
 -- This file was automatically generated for the LuaDist project.
 
 package = "org.conman.syslog"
-version = "2.1.3-1"
+version = "2.1.3-2"
 
 -- LuaDist source
 source = {
-  tag = "2.1.3-1",
+  tag = "2.1.3-2",
   url = "git://github.com/LuaDist-testing/org.conman.syslog.git"
 }
 -- Original source
@@ -13,6 +13,8 @@ source = {
 -- {
 --   url = "https://raw.githubusercontent.com/spc476/lua-conmanorg/syslog-2.1.3/src/syslog.c"
 -- }
+
+supported_platforms = { "unix" }
 
 description =
 {
