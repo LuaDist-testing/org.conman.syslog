@@ -1,22 +1,22 @@
 -- This file was automatically generated for the LuaDist project.
 
 package = "org.conman.syslog"
-version = "2.1.2-0"
+version = "2.1.3-1"
 
 -- LuaDist source
 source = {
-  tag = "2.1.2-0",
+  tag = "2.1.3-1",
   url = "git://github.com/LuaDist-testing/org.conman.syslog.git"
 }
 -- Original source
 -- source = 
 -- {
---   url = "https://raw.githubusercontent.com/spc476/lua-conmanorg/syslog-2.1.2/src/syslog.c"
+--   url = "https://raw.githubusercontent.com/spc476/lua-conmanorg/syslog-2.1.3/src/syslog.c"
 -- }
 
 description =
 {
-  homepage   = "https://github.com/spc476/lua-conmanorg/blob/syslog-2.1.2/src/syslog.c",
+  homepage   = "https://github.com/spc476/lua-conmanorg/blob/syslog-2.1.3/src/syslog.c",
   maintainer = "Sean Conner <sean@conman.org>",
   license    = "LGPL",
   summary    = "Lua interface to syslog()",
