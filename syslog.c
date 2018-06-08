@@ -35,6 +35,7 @@
 *
 *********************************************************************/
 
+#include <stdbool.h>
 #include <string.h>
 #include <stdlib.h>
 
@@ -109,7 +110,26 @@ static const struct strintmap m_levels[] =
 
 #define MAX_LEVEL	(sizeof(m_levels) / sizeof(struct strintmap))
 
-static char m_ident[1024];
+static const struct strintmap m_opts[] =
+{
+  { "cons"	, LOG_CONS	} ,
+  { "console"	, LOG_CONS	} ,
+  { "ndelay"	, LOG_NDELAY	} ,
+  { "nodelay"	, LOG_NDELAY	} ,
+  { "nowait"	, LOG_NOWAIT	} ,
+  { "odelay"	, LOG_ODELAY	} ,
+#ifdef LOG_PERROR
+  { "perror"	, LOG_PERROR	} ,
+  { "pid"	, LOG_PID	} ,
+  { "stderr"	, LOG_PERROR	} ,
+#else
+  { "perror"	, -1		} ,
+  { "pid"	, LOG_PID	} ,
+  { "stderr"	, -1		} ,
+#endif
+};
+
+#define MAX_OPT		(sizeof(m_opts) / sizeof(struct strintmap))
 
 /************************************************************************/
 
@@ -121,21 +141,6 @@ static int sim_cmp(const void *needle,const void *haystack)
   return strcmp(key,map->name);
 }
 
-/************************************************************************/
-
-static int check_boolean(lua_State *L,int index,const char *field,int def)
-{
-  int b;
-  
-  lua_getfield(L,3,field);
-  b = lua_toboolean(L,index);
-  lua_pop(L,1);
-  if (b)
-    return def;
-  else
-    return 0;
-}
-
 /************************************************************************
 *
 * Usage:	syslog.open(ident,facility[,flags])
@@ -145,13 +150,15 @@ static int check_boolean(lua_State *L,int index,const char *field,int def)
 *
 * Input:	ident (string) identity string
 *		facility (string) facility to use.
-*		flags (table/optional) flags, fields are:
-*			| pid=true	log pid
-*			| cons=true	log to console
-*			| nodelay=true	open socket immediately
-*			| ndelay=true		"
-*			| odelay=true	wait before opening socket
-*			| nowait=true	log immediately
+*		flags (table/optional) array of enum
+*			| pid		log pid
+*			| cons		log to console
+*			| nodelay	open socket immediately
+*			| ndelay		"
+*			| odelay	wait before opening socket
+*			| nowait	log immediately
+*			| perror	log to stderr as well
+*			| stderr		"
 *
 ************************************************************************/
 
@@ -160,11 +167,10 @@ static int syslog_open(lua_State *L)
   struct strintmap *map;
   const char       *name;
   const char       *ident;
-  size_t            sident;
   int               options;
   int               facility;
   
-  ident = luaL_checklstring(L,1,&sident);
+  ident = luaL_checkstring(L,1);
   name  = luaL_checkstring(L,2);
   map   = bsearch(name,m_facilities,MAX_FACILITY,sizeof(struct strintmap),sim_cmp);
   if (map == NULL)
@@ -175,21 +181,50 @@ static int syslog_open(lua_State *L)
   options = 0;
   if (lua_type(L,3) == LUA_TTABLE)
   {
-    options |= check_boolean(L , 3 , "pid"    , LOG_PID);
-    options |= check_boolean(L , 3 , "cons"   , LOG_CONS);
-    options |= check_boolean(L , 3 , "nodelay", LOG_NDELAY);
-    options |= check_boolean(L , 3 , "ndelay" , LOG_NDELAY);
-    options |= check_boolean(L , 3 , "odelay" , LOG_ODELAY);
-    options |= check_boolean(L , 3 , "nowait" , LOG_NOWAIT);
+    size_t max;
+    
+#if LUA_VERSION_NUM == 501
+    max = lua_objlen(L,3);
+#else
+    lua_len(L,3);
+    max = lua_tointeger(L,-1);
+    lua_pop(L,1);
+#endif
+
+    for (size_t i = 1 ; i <= max ; i++)
+    {
+      lua_pushinteger(L,i);
+      lua_gettable(L,3);
+      map = bsearch(
+                     luaL_checkstring(L,-1),
+                     m_opts,
+                     MAX_OPT,
+                     sizeof(struct strintmap),
+                     sim_cmp
+                    );
+     
+      if (map != NULL)
+      {
+#ifndef LOG_PERROR
+        if (map->value == -1)
+        {
+          lua_pushboolean(L,true);
+          lua_setfield(L,LUA_REGISTRYINDEX,"org.conman.syslog:perror");
+        }
+        else
+#endif
+        {
+          options |= map->value;
+        }
+      }
+      
+      lua_pop(L,1);
+    }    
   }
   
-  if (sident > sizeof(m_ident) - 1)
-    sident = sizeof(m_ident) - 1;
-  
-  memcpy(m_ident,ident,sident);
-  m_ident[sident] = '\0';
-  
-  openlog(m_ident,options,facility);
+  lua_pushvalue(L,1);
+  lua_setfield(L,LUA_REGISTRYINDEX,"org.conman.syslog:ident");
+  openlog(ident,options,facility);
   return 0;
 }
 
@@ -201,9 +236,15 @@ static int syslog_open(lua_State *L)
 *
 * *********************************************************************/
 
-static int syslog_close(lua_State *L __attribute__((unused)))
+static int syslog_close(lua_State *L)
 {
   closelog();
+  lua_pushnil(L);
+  lua_setfield(L,LUA_REGISTRYINDEX,"org.conman.syslog:ident");
+#ifndef LOG_PERROR
+  lua_pushnil(L);
+  lua_setfield(L,LUA_REGISTRYINDEX,"org.conman.syslog:perror");
+#endif
   return 0;
 }
 
@@ -242,6 +283,12 @@ static int syslog_log(lua_State *L)
   lua_insert(L,2);
   lua_call(L,lua_gettop(L) - 2,1);
   syslog(level,"%s",lua_tostring(L,-1));
+
+#ifndef LOG_PERROR
+  lua_getfield(L,LUA_REGISTRYINDEX,"org.conman.syslog:perror");
+  if (lua_toboolean(L,-1))
+    fprintf(stderr,"%s %s\n",name,lua_tostring(L,-2));
+#endif
 
   return 0;
 }
